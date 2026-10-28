@@ -42,8 +42,6 @@ export const newProject = (template: StarterTemplate = starterTemplates[0]): Pro
   id: globalThis.crypto?.randomUUID?.() ?? `project-${Date.now()}`,
   title: template.title,
   templateId: template.id,
-  scene: 'portrait',
-  subject: '',
   setting: '',
   clothing: '',
   action: '',
