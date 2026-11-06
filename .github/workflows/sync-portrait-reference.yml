@@ -1,0 +1,53 @@
+name: Sync portrait reference binary bridge
+on:
+  push:
+    branches: ['2']
+    paths:
+      - '唯一肖像五官参考.png'
+      - 'identity/.sync-trigger'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: portrait-reference-sync-2
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '2'
+          persist-credentials: true
+      - name: Generate and verify byte-exact mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p identity
+          python3 - <<'PY'
+          import base64, hashlib, json, mimetypes, pathlib, subprocess, datetime
+          src = pathlib.Path('唯一肖像五官参考.png')
+          raw = src.read_bytes()
+          assert raw.startswith(bytes.fromhex('89504e470d0a1a0a')), 'Not PNG'
+          sha = subprocess.check_output(['git','hash-object',str(src)], text=True).strip()
+          calculated = hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+          assert sha == calculated
+          b64 = pathlib.Path('identity/唯一肖像五官参考.png.b64')
+          b64.write_text(base64.b64encode(raw).decode('ascii')+'\n',encoding='ascii')
+          manifest = dict(source_path=str(src),source_blob_sha=sha,sha256=hashlib.sha256(raw).hexdigest(),mime='image/png',byte_length=len(raw),updated_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+          pathlib.Path('identity/唯一肖像五官参考.manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          assert base64.b64decode(b64.read_text().strip(),validate=True)==raw
+          pathlib.Path('/tmp/portrait-roundtrip.png').write_bytes(base64.b64decode(b64.read_text().strip(),validate=True))
+          PY
+          cmp '唯一肖像五官参考.png' /tmp/portrait-roundtrip.png
+      - name: Commit verified bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add 'identity/唯一肖像五官参考.png.b64' 'identity/唯一肖像五官参考.manifest.json'
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(identity): sync verified portrait binary bridge'
+            git push origin HEAD:2
+          fi
